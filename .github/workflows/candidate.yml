@@ -59,7 +59,9 @@ jobs:
           archive="candidate-payloads/$RELEASE_TAG/source-artifact.zip"
           archive_digest="sha256:$(sha256sum "$archive" | cut -d ' ' -f 1)"
           jq -e --arg name "gib-sync-$RELEASE_TAG" --arg digest "$archive_digest" --arg commit "$RELEASE_COMMIT" --arg run "$SOURCE_RUN_ID" '[.artifacts[] | select(.name == $name and .expired == false and .digest == $digest and .workflow_run.head_sha == $commit and .workflow_run.id == ($run | tonumber))] | length == 1' source-artifacts.json
-          unzip -q "$archive" -d candidate-assets
+          # Authenticate provenance first, then independently reject path/link,
+          # decompression and embedded-package hazards before writing any file.
+          python3 -B source/scripts/verify-candidate-archive.py "$archive" --destination candidate-assets --tag "$RELEASE_TAG" --sha256 "$archive_digest"
       - name: Verify the source tag and every exact candidate byte
         shell: bash
         run: |
