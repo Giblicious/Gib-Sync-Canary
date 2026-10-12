@@ -51,12 +51,21 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with: { node-version: 24, check-latest: true }
+      - name: Verify the source archive against public workflow artifact evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/Giblicious/Gib-Sync/actions/runs/$SOURCE_RUN_ID/artifacts" > source-artifacts.json
+          archive="candidate-payloads/$RELEASE_TAG/source-artifact.zip"
+          archive_digest="sha256:$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          jq -e --arg name "gib-sync-$RELEASE_TAG" --arg digest "$archive_digest" --arg commit "$RELEASE_COMMIT" --arg run "$SOURCE_RUN_ID" '[.artifacts[] | select(.name == $name and .expired == false and .digest == $digest and .workflow_run.head_sha == $commit and .workflow_run.id == ($run | tonumber))] | length == 1' source-artifacts.json
+          unzip -q "$archive" -d candidate-assets
       - name: Verify the source tag and every exact candidate byte
         shell: bash
         run: |
           set -euo pipefail
           [[ "$(git -C source rev-parse HEAD)" == "$RELEASE_COMMIT" ]]
-          node source/scripts/release-artifacts.mjs verify "candidate-assets/$RELEASE_TAG"
+          node source/scripts/release-artifacts.mjs verify candidate-assets
       - name: Publish only an isolated candidate, never overwrite an existing release
         shell: bash
         run: |
@@ -65,7 +74,7 @@ jobs:
           [[ "$status" == 404 ]]
           tag_status="$(curl -sS -o existing-tag.json -w '%{http_code}' --header "Authorization: Bearer $GH_TOKEN" --header 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
           [[ "$tag_status" == 404 ]]
-          bundle="candidate-assets/$RELEASE_TAG"
+          bundle=candidate-assets
           gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false --title "Disposable Gib Sync $RELEASE_TAG" --notes "Disposable vault testing only. Exact source commit: $RELEASE_COMMIT. Source workflow run: $SOURCE_RUN_ID. Image: $RELEASE_IMAGE_DIGEST. Production Gib-Sync releases and existing users are untouched." "$bundle/main.js" "$bundle/manifest.json" "$bundle/styles.css" "$bundle/versions.json" "$bundle/gib-sync-$RELEASE_TAG.zip" "$bundle/release-artifacts.json"
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir published-assets
           node source/scripts/release-artifacts.mjs verify published-assets

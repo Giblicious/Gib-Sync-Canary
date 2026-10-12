@@ -10,8 +10,9 @@ published safely in the production distribution repository.
 This repository contains distribution policy, not a separate plugin fork. Its
 workflow verifies a successful immutable source release run, source tag/commit,
 image digest and every artifact SHA-256 before publishing the exact source-built
-bytes. The verified source Actions bundle is retained in an immutable distribution
-commit, avoiding cross-repository tokens or new secrets. The workflow publishes
+bytes. The original source Actions ZIP is retained in an immutable distribution
+commit. Its SHA-256 must match GitHub's independently published workflow artifact
+digest before extraction, avoiding cross-repository tokens or new secrets. The workflow publishes
 release assets; local operators never create or patch a release. It does not
 rebuild, alter plugin assets or change production releases.
 
