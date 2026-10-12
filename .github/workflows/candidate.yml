@@ -1,0 +1,75 @@
+name: Distribute verified source candidate
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Immutable numeric source tag
+        required: true
+        type: string
+      source_run_id:
+        description: Successful Gib-Sync source release workflow run ID
+        required: true
+        type: string
+      source_commit:
+        description: Exact 40-character source commit
+        required: true
+        type: string
+      image_digest:
+        description: Exact source-built sha256 image digest
+        required: true
+        type: string
+permissions: { contents: write, actions: read }
+concurrency: { group: gib-sync-canary-distribution, cancel-in-progress: false }
+jobs:
+  distribute:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: '${{ inputs.tag }}'
+      SOURCE_RUN_ID: '${{ inputs.source_run_id }}'
+      RELEASE_COMMIT: '${{ inputs.source_commit }}'
+      RELEASE_IMAGE_DIGEST: '${{ inputs.image_digest }}'
+      GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+    steps:
+      - name: Verify scope and successful source workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == 'Giblicious/Gib-Sync-Canary' ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]{0,18}$ ]]
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RELEASE_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          gh api "repos/Giblicious/Gib-Sync/actions/runs/$SOURCE_RUN_ID" > source-run.json
+          jq -e --arg commit "$RELEASE_COMMIT" '.status == "completed" and .conclusion == "success" and .head_sha == $commit and .path == ".github/workflows/release.yml" and .head_repository.full_name == "Giblicious/Gib-Sync"' source-run.json
+      - uses: actions/checkout@v4
+        with:
+          repository: Giblicious/Gib-Sync
+          ref: '${{ inputs.tag }}'
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, check-latest: true }
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
+          repository: Giblicious/Gib-Sync
+          run-id: '${{ inputs.source_run_id }}'
+          name: gib-sync-${{ inputs.tag }}
+          path: candidate-assets
+      - name: Verify the source tag and every exact candidate byte
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C source rev-parse HEAD)" == "$RELEASE_COMMIT" ]]
+          node source/scripts/release-artifacts.mjs verify candidate-assets
+      - name: Publish only an isolated candidate, never overwrite an existing release
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl -sS -o existing-release.json -w '%{http_code}' --header "Authorization: Bearer $GH_TOKEN" --header 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          [[ "$status" == 404 ]]
+          tag_status="$(curl -sS -o existing-tag.json -w '%{http_code}' --header "Authorization: Bearer $GH_TOKEN" --header 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+          [[ "$tag_status" == 404 ]]
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false --title "Disposable Gib Sync $RELEASE_TAG" --notes "Disposable vault testing only. Exact source commit: $RELEASE_COMMIT. Source workflow run: $SOURCE_RUN_ID. Image: $RELEASE_IMAGE_DIGEST. Production Gib-Sync releases and existing users are untouched." candidate-assets/main.js candidate-assets/manifest.json candidate-assets/styles.css candidate-assets/versions.json "candidate-assets/gib-sync-$RELEASE_TAG.zip" candidate-assets/release-artifacts.json
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir published-assets
+          node source/scripts/release-artifacts.mjs verify published-assets
