@@ -10,7 +10,10 @@ published safely in the production distribution repository.
 This repository contains distribution policy, not a separate plugin fork. Its
 workflow verifies a successful immutable source release run, source tag/commit,
 image digest and every artifact SHA-256 before publishing the exact source-built
-bytes. It does not rebuild, alter plugin assets or change production releases.
+bytes. The verified source Actions bundle is retained in an immutable distribution
+commit, avoiding cross-repository tokens or new secrets. The workflow publishes
+release assets; local operators never create or patch a release. It does not
+rebuild, alter plugin assets or change production releases.
 
 Do not install this candidate into a real vault. The associated validation server
 must enforce its dedicated disposable Seafile account/library; a separate database
