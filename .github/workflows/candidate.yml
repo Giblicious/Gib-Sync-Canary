@@ -41,7 +41,7 @@ jobs:
           [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]{0,18}$ ]]
           [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           [[ "$RELEASE_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
-          gh api "repos/Giblicious/Gib-Sync/actions/runs/$SOURCE_RUN_ID" > source-run.json
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "https://api.github.com/repos/Giblicious/Gib-Sync/actions/runs/$SOURCE_RUN_ID" --output source-run.json
           jq -e --arg commit "$RELEASE_COMMIT" '.status == "completed" and .conclusion == "success" and .head_sha == $commit and .path == ".github/workflows/release.yml" and .head_repository.full_name == "Giblicious/Gib-Sync"' source-run.json
       - uses: actions/checkout@v4
         with:
@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh api "repos/Giblicious/Gib-Sync/actions/runs/$SOURCE_RUN_ID/artifacts" > source-artifacts.json
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "https://api.github.com/repos/Giblicious/Gib-Sync/actions/runs/$SOURCE_RUN_ID/artifacts" --output source-artifacts.json
           archive="candidate-payloads/$RELEASE_TAG/source-artifact.zip"
           archive_digest="sha256:$(sha256sum "$archive" | cut -d ' ' -f 1)"
           jq -e --arg name "gib-sync-$RELEASE_TAG" --arg digest "$archive_digest" --arg commit "$RELEASE_COMMIT" --arg run "$SOURCE_RUN_ID" '[.artifacts[] | select(.name == $name and .expired == false and .digest == $digest and .workflow_run.head_sha == $commit and .workflow_run.id == ($run | tonumber))] | length == 1' source-artifacts.json
